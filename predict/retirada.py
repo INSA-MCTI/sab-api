@@ -84,6 +84,7 @@ def rowsToList(rows):
         return lista
 
 def demandas(data, reservatId):
+    global evapDiv
     mes_atual = int(data.month)
     mes_limite = mes_atual - 12
     ano_atual = int(data.year)
@@ -132,14 +133,12 @@ def demandas(data, reservatId):
             mes_inicial = int(lista_datas[j][0].month)
             for data in lista_dias:
                 evapDiv_inicial += 1 if mes_inicial == int(data.month) else 0
-            global evapDiv
             evapDiv = evapDiv_inicial
             vp_inicial = volumeParcial(mes_inicial, float(lista_volumes[j][0]) * 1000000.00, reservatId)
 
             mes_final = int(lista_datas[j][1].month)
             for data in lista_dias:
                 evapDiv_final += 1 if mes_final == int(data.month) else 0
-            global evapDiv
             evapDiv = evapDiv_inicial
             vp_final = volumeParcial(mes_final, float(lista_volumes[j][1]) * 1000000.00, reservatId)
 

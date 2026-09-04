@@ -4,6 +4,10 @@ from datetime import datetime
 from dateutil import relativedelta
 import numpy
 import MySQLdb
+import os
+
+
+MYSQL_DEFAULT_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'my.cnf')
 
 
 # ADICIONAR VALORES DA CONSULTA DO MONITORAMENTO PARA QUANDO FOR INSERIR VERIFICAR SE VAI COMPARAR COM O ANTERIOR OU COM ELE
@@ -69,14 +73,14 @@ def retira_ruido(lista_reserv, ultimo_monitoramento, fonte):
 
 def consulta_BD(query):
 	""" Connect to MySQL database """
-	conn = MySQLdb.connect(read_default_group='INSA',db="INSA")
+	conn = MySQLdb.connect(read_default_file=MYSQL_DEFAULT_FILE, read_default_group='INSA',db="INSA")
 	cursor = conn.cursor()
 	rows = []
 	try:
 		cursor.execute(query)
 		rows = cursor.fetchall()
 	except MySQLdb.Error as e:
-		print "Error", e
+		print("Error", e)
 		conn.rollback()
 
 	cursor.close()
@@ -85,26 +89,26 @@ def consulta_BD(query):
 	return rows
 
 def insert_many_BD(values):
-	conn = MySQLdb.connect(read_default_group='INSA',db="INSA")
+	conn = MySQLdb.connect(read_default_file=MYSQL_DEFAULT_FILE, read_default_group='INSA',db="INSA")
 	cursor = conn.cursor()
 	try:
 		cursor.executemany("""INSERT IGNORE INTO tb_monitoramento (id_reservatorio,cota,volume,volume_percentual,data_informacao,visualizacao,fonte) VALUES (%s,%s,%s,%s,%s,%s,%s)""", values)
 		conn.commit()
 	except MySQLdb.Error as e:
-		print "Error", e
+		print("Error", e)
 		conn.rollback()
 
 	cursor.close()
 	conn.close()
 
 def insert_many_BD_uhe(values):
-	conn = MySQLdb.connect(read_default_group='INSA',db="INSA")
+	conn = MySQLdb.connect(read_default_file=MYSQL_DEFAULT_FILE, read_default_group='INSA',db="INSA")
 	cursor = conn.cursor()
 	try:
 		cursor.executemany("""INSERT IGNORE INTO tb_monitoramento_uhe (id_reservatorio,volume_util_acumulado,cota,afluencia,defluencia,data_informacao,fonte) VALUES (%s,%s,%s,%s,%s,%s,%s)""", values)
 		conn.commit()
 	except MySQLdb.Error as e:
-		print "Error", e
+		print("Error", e)
 		conn.rollback()
 
 	cursor.close()
@@ -112,13 +116,13 @@ def insert_many_BD_uhe(values):
 
 def update_BD(query):
 	""" Connect to MySQL database """
-	conn = MySQLdb.connect(read_default_group='INSA',db="INSA")
+	conn = MySQLdb.connect(read_default_file=MYSQL_DEFAULT_FILE, read_default_group='INSA',db="INSA")
 	cursor = conn.cursor()
 	try:
 		cursor.execute(query)
 		conn.commit()
 	except MySQLdb.Error as e:
-		print "Error", e
+		print("Error", e)
 		conn.rollback()
 
 	cursor.close()

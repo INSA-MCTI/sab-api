@@ -107,11 +107,11 @@ def evapReal(reservatId, vol):
 
 def volumeParcial(reservatId, data_atual, vol):
     global data
+    global mes
+    global evaporacao
     data = data_atual
     if mes != data.month:
-        global mes
         mes = data.month
-        global evaporacao
         evaporacao = evap(reservatId)
 
     evap_real = evapReal(reservatId, vol)

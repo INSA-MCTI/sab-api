@@ -14,8 +14,8 @@ class TestStringMethods(unittest.TestCase):
         self.assertEqual(funcoes_aux.remove_accents("ínsa"), 'insa')
 
     def test_fix_accent(self):
-        self.assertEqual(funcoes_aux.fix_accents("ínsa"), unicode('ínsa', "unicode-escape"))
-        self.assertEqual(funcoes_aux.fix_accents("insa"), unicode('insa', "unicode-escape"))
+        self.assertEqual(funcoes_aux.fix_accents("ínsa"), bytes("ínsa", "utf-8").decode("unicode-escape"))
+        self.assertEqual(funcoes_aux.fix_accents("insa"), bytes("insa", "utf-8").decode("unicode-escape"))
 
     def test_create_dict(self):
         values = ["insa","instituto nacional do semiario", "salomao"]

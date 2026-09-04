@@ -10,12 +10,9 @@ from datetime import datetime
 import aux_collection_insert
 
 
-reload(sys)
-sys.setdefaultencoding('utf8')
-
 def remove_accents(txt):
-	if (type(txt) is str):
-		txt= unicode(txt, "utf-8")
+	if isinstance(txt, bytes):
+		txt = txt.decode("utf-8")
 	return normalize('NFKD', txt).encode('ASCII','ignore').decode('ASCII')
 
 rn = aux_collection_insert.consulta_BD("SELECT DISTINCT r.id id_reservatorio, r.nome nome_reservatorio, r.reservat reservat, r.capacidade capacidade,"
@@ -32,7 +29,7 @@ r = requests.get('http://servicos.searh.rn.gov.br/semarh/sistemadeinformacoes/co
 json_reservatorio = {}
 contador_coluna = 0
 
-soup = BeautifulSoup(r.text.decode('utf8'), 'html.parser')
+soup = BeautifulSoup(r.text, 'html.parser')
 
 tabela = soup.find_all('tr', { "class" : ["gridLinhaImpar", "gridLinhaPar"] })
 

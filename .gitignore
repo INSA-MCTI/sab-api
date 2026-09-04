@@ -1,3 +1,13 @@
 *.pyc
 .Rproj.user
 .Rhistory
+
+# Python
+*.pyc
+__pycache__/
+.venv/
+.py310/
+
+# Configurações com dados sensíveis
+.env
+

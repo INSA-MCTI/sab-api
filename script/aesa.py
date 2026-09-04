@@ -6,17 +6,15 @@ import requests
 from unicodedata import normalize
 from fuzzywuzzy import fuzz
 import re
-import urllib, json
+import json
+from urllib.request import urlopen
 from datetime import datetime
 import aux_collection_insert
 
 
-reload(sys)
-sys.setdefaultencoding('utf8')
-
 def remove_accents(txt):
-	if (type(txt) is str):
-		txt= unicode(txt, "utf-8")
+	if isinstance(txt, bytes):
+		txt = txt.decode("utf-8")
 	return normalize('NFKD', txt).encode('ASCII','ignore').decode('ASCII')
 
 paraiba = aux_collection_insert.consulta_BD("SELECT DISTINCT r.id id_reservatorio, r.nome nome_reservatorio, r.reservat reservat, r.capacidade capacidade,"
@@ -29,7 +27,7 @@ paraiba = aux_collection_insert.consulta_BD("SELECT DISTINCT r.id id_reservatori
 				"and r.id=mo2.id_reservatorio and e.sigla='PB';")
 
 url = "http://www.aesa.pb.gov.br/aesa-website/resources/data/volumeAcudes/ultimosVolumes/data.json"
-response = urllib.urlopen(url)
+response = urlopen(url)
 
 to_insert = []
 aesa = json.loads(response.read())

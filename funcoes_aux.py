@@ -3,12 +3,17 @@
 
 from unicodedata import normalize
 from dateutil import relativedelta
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from fuzzywuzzy import fuzz
 import re
 from scipy import stats
 import sys
-sys.path.append('../sab-api/predict')
+import os
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+PREDICT_DIR = os.path.join(BASE_DIR, 'predict')
+if PREDICT_DIR not in sys.path:
+	sys.path.insert(0, PREDICT_DIR)
 import predict
 import predict_info
 import IO
@@ -16,12 +21,14 @@ import IO
 
 
 def remove_accents(txt):
-	if (type(txt) is str):
-		txt= unicode(txt, "utf-8")
+	if isinstance(txt, bytes):
+		txt = txt.decode("utf-8")
 	return normalize('NFKD', txt).encode('ASCII','ignore').decode('ASCII')
 
 def fix_accents(txt):
-	return unicode(txt, 'unicode-escape')
+	if isinstance(txt, bytes):
+		return txt.decode('unicode-escape')
+	return bytes(txt, 'utf-8').decode('unicode-escape')
 
 def list_of_dictionarys(list_of_values, keys, especial=None):
 	answer_list = []
@@ -47,17 +54,29 @@ def list_of_dictionarys(list_of_values, keys, especial=None):
 		if (especial == "mun"):
 			dictionary["nome_sem_acento"] = remove_accents(dictionary["nome"])
 			dictionary["tipo"] = "municipio"
-		answer_list.append(dictionary)
+		answer_list.append(normalize_json_value(dictionary))
 
 	return answer_list
+
+def normalize_json_value(value):
+	if isinstance(value, Decimal):
+		return float(value)
+	if isinstance(value, (datetime, date)):
+		return value.isoformat()
+	if isinstance(value, bytes):
+		return value.decode("utf-8")
+	if isinstance(value, dict):
+		return {key: normalize_json_value(item) for key, item in value.items()}
+	if isinstance(value, list):
+		return [normalize_json_value(item) for item in value]
+	if isinstance(value, tuple):
+		return tuple(normalize_json_value(item) for item in value)
+	return value
 
 def create_dictionary(values, keys):
 	dictionary = {}
 	for i in range(len(values)):
-		if (type(values[i]) is str):
-			dictionary[keys[i]] = values[i]
-		else:
-			dictionary[keys[i]] = values[i]
+		dictionary[keys[i]] = normalize_json_value(values[i])
 	return dictionary
 
 def fix_data_interval_limit(monitoring):
@@ -102,7 +121,13 @@ def reservoirs_similar(reservoir_name, reservoirs, threshold):
 		return list(filter(lambda d: d['semelhanca'] >= threshold, reservoirs_list_ordered))[:5]
 
 def regression_gradient(list_1,list_2):
-	gradient, intercept, r_value, p_value, std_err = stats.linregress(list_1,list_2)
+	if not hasattr(list_1, '__iter__') or not hasattr(list_2, '__iter__'):
+		return 0
+	values_1 = [float(value) for value in list_1]
+	values_2 = [float(value) for value in list_2]
+	if len(values_1) != len(values_2) or len(values_1) < 2:
+		return 0
+	gradient, intercept, r_value, p_value, std_err = stats.linregress(values_1, values_2)
 	return gradient
 
 def get_last_date(reservoir_id):

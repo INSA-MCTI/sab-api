@@ -9,8 +9,8 @@ from datetime import timedelta, date, datetime
 outorgas = {}
 
 def remove_accents(txt):
-	if (type(txt) is str):
-		txt= unicode(txt, "utf-8")
+	if isinstance(txt, bytes):
+		txt = txt.decode("utf-8")
 	return normalize('NFKD', txt).encode('ASCII','ignore').decode('ASCII')
 
 def nomes_PB():
@@ -42,6 +42,7 @@ def sum_vazao(acude):
 	return vazao
 
 def insert_outorga(outorgas_pb, resertvats):
+	global outorgas
 	today = date.today()
 	for res in resertvats:
 		acude = outorgas_pb["Açude Monitorados"][0]
@@ -61,13 +62,10 @@ def insert_outorga(outorgas_pb, resertvats):
 				index = check_data(acude, listaDados)
 				if index != None:
 					if outorgas[acude][index][0] < listaDados[0][0]:
-						global outorgas
 						outorgas[acude][index] = listaDados[0]
 				else:
-					global outorgas
 					outorgas[acude].append(listaDados[0])
 			else:
-				global outorgas
 				outorgas[acude] = [[data, vazao, latitude, longitude, remove_accents(uso)]]
 
 			vazao_total = sum_vazao(acude)
@@ -79,7 +77,7 @@ def popular_outorga():
 	outorgas_pb = {}
 	resertvats = nomes_PB()
 	for row in reader_outorgas_pb:
-	    for column, value in row.iteritems():
+	    for column, value in row.items():
 	        outorgas_pb.setdefault(column, []).append(value)
 	    insert_outorga(outorgas_pb, resertvats)
 	    outorgas_pb = {}
