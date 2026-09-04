@@ -8,11 +8,19 @@ import time
 import aux_collection_insert
 
 
-reload(sys)
-sys.setdefaultencoding('utf8')
-
-
-ultimos_monitoramentos = aux_collection_insert.consulta_BD("SELECT mon.id, mo.cota, mo.volume, mo.volume_percentual, date_format(mo.data_informacao,'%d-%m-%Y') FROM tb_monitoramento mo RIGHT JOIN (SELECT r.id, max(m.data_informacao) AS maior_data FROM tb_reservatorio r LEFT OUTER JOIN tb_monitoramento m ON r.id=m.id_reservatorio GROUP BY r.id) mon ON mo.id_reservatorio=mon.id AND mon.maior_data=mo.data_informacao;")
+ultimos_monitoramentos = aux_collection_insert.consulta_BD("""SELECT mon.id,
+																	 mo.cota,
+																	mo.volume, 
+																	mo.volume_percentual, 
+																	date_format(mo.data_informacao,'%d-%m-%Y') 
+																FROM tb_monitoramento mo 
+																RIGHT JOIN (SELECT r.id, 
+																					max(m.data_informacao) AS maior_data 
+																			FROM tb_reservatorio r 
+																			LEFT OUTER JOIN tb_monitoramento m 
+																			ON r.id=m.id_reservatorio 
+																			GROUP BY r.id) mon 
+																ON mo.id_reservatorio=mon.id AND mon.maior_data=mo.data_informacao;""")
 
 formato_data_1 = '%d/%m/%Y'
 formato_data_2 = '%d-%m-%Y'
@@ -36,9 +44,10 @@ for monitoramento in ultimos_monitoramentos:
 		data_inicial = str(monitoramento[4])
 
 	try:
+		data_inicial = "20-05-2026"
 		r = requests.get('https://www.ana.gov.br/sar0/Medicao?dropDownListReservatorios='+reserv+'&dataInicial='+data_inicial+'&dataFinal='+data_final+'&button=Buscar', verify=False)
 	except requests.exceptions.RequestException as e:  # This is the correct syntax
-		print e
+		print(e)
 		continue	
 
 	json_insert = {}

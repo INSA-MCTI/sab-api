@@ -4,70 +4,101 @@
 import MySQLdb
 import csv
 import json
+import os
 from unicodedata import normalize
 from datetime import datetime
 
 import insert_users_on_DB
+import insert_outorga_on_DB
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+MYSQL_DEFAULT_FILE = os.path.join(PROJECT_ROOT, 'my.cnf')
+SQL_FILE = os.path.join(SCRIPT_DIR, 'db_insa.sql')
+
+def execute_sql_script(cursor, sql_file):
+	delimiter = ';'
+	statement_lines = []
+
+	with open(sql_file, encoding='utf-8') as sql_handle:
+		for raw_line in sql_handle:
+			line = raw_line.rstrip('\n')
+			stripped = line.strip()
+
+			if not stripped:
+				continue
+			if stripped.startswith('--'):
+				continue
+			if stripped.upper().startswith('DELIMITER '):
+				delimiter = stripped.split(None, 1)[1]
+				continue
+
+			statement_lines.append(line)
+			statement = '\n'.join(statement_lines).strip()
+			if statement.endswith(delimiter):
+				statement = statement[:-len(delimiter)].strip()
+				if statement:
+					cursor.execute(statement)
+				statement_lines = []
 
 try:
-	conn = MySQLdb.connect(read_default_group='INSA')
+	conn = MySQLdb.connect(read_default_file=MYSQL_DEFAULT_FILE, read_default_group='INSA')
 	cursor = conn.cursor()
-	for line in open("db_insa.sql").read().split(';\n'):
-		if(line != ""):
-			cursor.execute(line)
+	execute_sql_script(cursor, SQL_FILE)
 finally:
 	cursor.close()
 	conn.close()
 
 def execute_many_BD(insert,values):
-	conn = MySQLdb.connect(read_default_group='INSA',db="INSA")
+	conn = MySQLdb.connect(read_default_file=MYSQL_DEFAULT_FILE, read_default_group='INSA',db="INSA")
 	cursor = conn.cursor()
 	try:
 		cursor.executemany(insert, values)
 		conn.commit()
 	except MySQLdb.Error as e:
-		print "Error", e
+		print("Error", e)
 		conn.rollback()
 
 	conn.close()
 
-reader_cidades_br = csv.DictReader(open('../data/cidades_br.csv'))
+reader_cidades_br = csv.DictReader(open(os.path.join(DATA_DIR, 'cidades_br.csv'), encoding='utf-8'))
 cidades_br = {}
 for row in reader_cidades_br:
-	for column, value in row.iteritems():
+	for column, value in row.items():
 		cidades_br.setdefault(column, []).append(value)
 #CABEÇALHO cidades_br
 #ibge_id,uf,name,capital,lon,lat,no_accents,alternative_names,microregion,mesoregion
 
 
-reader_mun_sab = csv.DictReader(open('../data/municipios_sab.csv'))
+reader_mun_sab = csv.DictReader(open(os.path.join(DATA_DIR, 'municipios_sab.csv'), encoding='utf-8'))
 municipios_sab = {}
 for row in reader_mun_sab:
-	for column, value in row.iteritems():
+	for column, value in row.items():
 		municipios_sab.setdefault(column, []).append(value)
 #CABEÇALHO municipios_sab
 #ID,GEOCODIGO,GEOCODIGO1,MUNICIPIO,UF_COD,UF,REGIAO,MESO_COD,MESOREGIAO,MICRO_COD,MICROREGIA,AREA_KM2,SEMIARIDO
 
 
-reader_estado_br = csv.DictReader(open('../data/estados_br.csv'))
+reader_estado_br = csv.DictReader(open(os.path.join(DATA_DIR, 'estados_br.csv'), encoding='utf-8'))
 estados_br = {}
 for row in reader_estado_br:
-	for column, value in row.iteritems():
+	for column, value in row.items():
 		estados_br.setdefault(column, []).append(value)
 #CABEÇALHO estados_br
 #ID,CD_GEOCODU,NM_ESTADO,NM_REGIAO,SIGLA
 
 
 #tabela tb_reservatorio
-with open('../data/reserv.json') as data_file:
+with open(os.path.join(DATA_DIR, 'reserv.json'), encoding='utf-8') as data_file:
 	_reservatorios = json.load(data_file)
 geocodes = {}
 tb_reservatorio = []
 info_municipio_reservatorio = []
 for reservat in _reservatorios['features']:
 	geocodes[int(reservat['properties']['GEOCODIGO'])] = reservat['geometry']['coordinates']
-	bacia = reservat['properties']['BACIA'].encode('utf8')
-	reservat_nome = reservat['properties']['RESERVAT'].encode('utf8')
+	bacia = reservat['properties']['BACIA']
+	reservat_nome = reservat['properties']['RESERVAT']
 	if (bacia == "Curimata?"):
 		bacia = "Curimataú"
 	elif(bacia == "Gar?as"):
@@ -84,17 +115,17 @@ for reservat in _reservatorios['features']:
 	elif (reservat_nome == "Açude Pompeu Sobrinho (Choró Lim?o)"):
 		reservat_nome = "Açude Pompeu Sobrinho (Choró Limão)"
 
-	tb_reservatorio.append((int(reservat['properties']['GEOCODIGO']),reservat['properties']['NOME'].encode('utf8'), reservat_nome,
+	tb_reservatorio.append((int(reservat['properties']['GEOCODIGO']),reservat['properties']['NOME'], reservat_nome,
 		bacia,reservat['properties']['TIPO_RESER'],reservat['properties']['AREA_M2'],reservat['properties']['PERIM'],
 		reservat['properties']['HECTARES'],reservat['properties']['CAP_HM3'],reservat['geometry']['coordinates'][1],reservat['geometry']['coordinates'][0]))
-	info_municipio_reservatorio.append((int(reservat['properties']['GEOCODIGO']),reservat['properties']['MUNICIPIO'].encode('utf8'),reservat['properties']['ESTADO'].encode('utf8')))
+	info_municipio_reservatorio.append((int(reservat['properties']['GEOCODIGO']),reservat['properties']['MUNICIPIO'],reservat['properties']['ESTADO']))
 
 #tabela tb_estado
-tb_estado = zip(estados_br["CD_GEOCODU"], estados_br["NM_ESTADO"], estados_br["NM_REGIAO"], estados_br["SIGLA"])
+tb_estado = list(zip(estados_br["CD_GEOCODU"], estados_br["NM_ESTADO"], estados_br["NM_REGIAO"], estados_br["SIGLA"]))
 
 #tabela tb_municipio
 tb_municipio = []
-municipios_br = zip(cidades_br["ibge_id"],cidades_br["name"],cidades_br["uf"],cidades_br["lat"],cidades_br["lon"])
+municipios_br = list(zip(cidades_br["ibge_id"],cidades_br["name"],cidades_br["uf"],cidades_br["lat"],cidades_br["lon"]))
 
 for municipio in municipios_br:
 	id_uf = estados_br["CD_GEOCODU"][estados_br["SIGLA"].index(municipio[2])]
@@ -109,8 +140,8 @@ for municipio in municipios_br:
 tb_reservatorio_municipio = []
 
 def remover_acentos(txt):
-	if (type(txt) is str):
-		txt= unicode(txt, "utf-8")
+	if isinstance(txt, bytes):
+		txt = txt.decode("utf-8")
 	return normalize('NFKD', txt).encode('ASCII','ignore').decode('ASCII')
 
 estados_sem_acento = {"nome":[], "uf":[]}
@@ -231,7 +262,7 @@ reservatorios_municipios = [(12176,3124302),(12303,2606507)]
 execute_many_BD("""DELETE FROM tb_reservatorio_municipio WHERE id_reservatorio=%s and id_municipio=%s""", reservatorios_municipios)
 
 
-reader_boletim = csv.DictReader(open('../data/dados_boletim.csv'))
+reader_boletim = csv.DictReader(open(os.path.join(DATA_DIR, 'dados_boletim.csv'), encoding='utf-8'))
 boletim_historico = []
 formato_data_1 = '%d/%m/%Y'
 formato_data_2 = '%Y-%m-%d'
@@ -252,5 +283,5 @@ insert_users_on_DB.insert_user('insa', 'volup14')
 insert_users_on_DB.insert_user('admin', '0lh0n4gu4')
 
 #### INSERINDO outorgas para os reservatórios da PB
-insert_outorga_on_BD.create_outorga()
-insert_outorga_on_BD.popular_outorga()
+insert_outorga_on_DB.create_outorga()
+insert_outorga_on_DB.popular_outorga()

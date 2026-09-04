@@ -31,12 +31,11 @@ def mae(reservatId, data):
     return response
 
 def calculateError(vol_reais, result_fit):
+    global response
     fit = result_fit[1]
     difs = difference(vol_reais, fit)
     error = sum(difs)/len(difs) if len(difs) > 0 else None
-    global response
     response.append(error)
-    global response
     response.append(result_fit[0])
 
 def difference(reais, fit):
@@ -74,9 +73,9 @@ def getVolumes(tipo, reservatId, data):
     data_inicial = datetime.strptime(data, "%Y-%m-%d").date()
     data_final = data_inicial + timedelta(days=180)
 
-    print "-----------------------------------------------"
-    print data_inicial
-    print data_final
+    print("-----------------------------------------------")
+    print(data_inicial)
+    print(data_final)
 
     rows = rowsToList(predict_info.volumesEntre(reservatId, data_inicial, data_final))
 

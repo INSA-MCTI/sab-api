@@ -77,7 +77,7 @@ def compara_passado(reservatId, ultimaData):
 # - Função auxiliar para os cálculos de previsão por modelo matemático
 def isNonStationary(seriesValues):
     X = seriesValues
-    split = len(X) / 2
+    split = len(X) // 2
     X1, X2 = X[0:split], X[split:]
     mean1, mean2 = X1.mean(), X2.mean()
     var1, var2 = X1.var(), X2.var()
@@ -87,7 +87,7 @@ def isNonStationary(seriesValues):
     return False
 
 def previsao_matematica(reservatId, data):
-    seriesArray = Series.from_array(predict_info.getSeries(reservatId, data))
+    seriesArray = Series(predict_info.getSeries(reservatId, data))
     seriesValues = seriesArray.values
 
     mathDict = {'calculado': False, 'volumes': [], 'dias': 0}

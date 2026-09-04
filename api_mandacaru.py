@@ -3,16 +3,28 @@
 import IO
 import funcoes_aux
 from dateutil import relativedelta
-from datetime import datetime, timedelta
+from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import abort
 import math
-import StringIO
 import csv
 import re
-import json
 
 ALLOWED_EXTENSIONS = set(['csv'])
+STATE_IDS = {
+	"AL": 27,
+	"BA": 29,
+	"CE": 23,
+	"MG": 31,
+	"PB": 25,
+	"PE": 26,
+	"PI": 22,
+	"RN": 24,
+	"SE": 28,
+}
+
+def _date_to_numeric(date_string):
+	return float(datetime.strptime(date_string, '%d/%m/%Y').toordinal())
 
 def states_sab():
 	return(IO.states_sab())
@@ -21,11 +33,20 @@ def json_brazil():
 	return(IO.json_brazil())
 
 def reservoirs():
-	query = ("SELECT id_reservatorio, latitude, longitude, capacidade, "
-		"IF(data_informacao  >= (CURDATE() - INTERVAL 90 DAY), volume_percentual, null) as volume_percentual,"
-		"IF(data_informacao  >= (CURDATE() - INTERVAL 90 DAY), volume, null) as volume,"
-		"IF(data_informacao  >= (CURDATE() - INTERVAL 90 DAY), date_format(data_informacao,'%d/%m/%Y'), null) as data_informacao, fonte"
-		" from mv_monitoramento;")
+	query = (
+		"SELECT mon.id AS id_reservatorio, mon.latitude, mon.longitude, mon.capacidade, "
+		"IF(mon.maior_data >= (CURDATE() - INTERVAL 90 DAY), ROUND(mo.volume_percentual,1), NULL) AS volume_percentual, "
+		"IF(mon.maior_data >= (CURDATE() - INTERVAL 90 DAY), mo.volume, NULL) AS volume, "
+		"IF(mon.maior_data >= (CURDATE() - INTERVAL 90 DAY), DATE_FORMAT(mon.maior_data,'%d/%m/%Y'), NULL) AS data_informacao, "
+		"mo.fonte "
+		"FROM ("
+			"SELECT r.id, r.latitude, r.longitude, r.capacidade, MAX(m.data_informacao) AS maior_data "
+			"FROM tb_reservatorio r "
+			"LEFT JOIN tb_monitoramento m ON r.id = m.id_reservatorio "
+			"GROUP BY r.id, r.latitude, r.longitude, r.capacidade"
+		") mon "
+		"LEFT JOIN tb_monitoramento mo ON mo.id_reservatorio = mon.id AND mo.data_informacao = mon.maior_data;"
+	)
 	select_answer = IO.select_DB(query)
 
 	keys = ["id", "latitude", "longitude", "capacidade","volume_percentual","volume", "data_informacao", "fonte"]
@@ -54,20 +75,18 @@ def reservoirs():
 def reservoirs_information(res_id=None):
 	if (res_id is None):
 		query = ("SELECT r.id,r.nome,r.perimetro,r.bacia,r.reservat,r.hectares"
-		    ",r.tipo,r.area,r.capacidade,mv_mo.fonte"
-		    ",mv_mo.volume, ROUND(mv_mo.volume_percentual,1), date_format(mv_mo.data_informacao,'%d/%m/%Y')"
-		    ",GROUP_CONCAT(DISTINCT m.nome SEPARATOR ' / ') municipio"
-		    ",GROUP_CONCAT(DISTINCT e.nome SEPARATOR ' / ') estado"
-		    ",GROUP_CONCAT(DISTINCT e.sigla SEPARATOR ' / ') uf"
-		    ",curso_barrado, cota_soleira, evaporacao_representativa, localizacao, posto_pluviometrico, area_bacia_nao_controlada, unidade_planejamento "
-		    " FROM tb_reservatorio r JOIN tb_reservatorio_municipio rm ON r.id=rm.id_reservatorio"
-		    " JOIN tb_municipio m ON rm.id_municipio=m.id"
-		    " JOIN tb_estado e ON m.id_estado=e.id"
-		    " LEFT OUTER JOIN mv_monitoramento mv_mo"
-		    " ON mv_mo.id_reservatorio=r.id"
-		    " LEFT JOIN tb_reservatorio_info info"
-		    " ON info.id_reservatorio =r.id"
-		    " GROUP BY r.id,mv_mo.volume, mv_mo.volume_percentual,mv_mo.data_informacao")
+				",r.tipo,r.area,r.capacidade,mv_mo.fonte"
+				",mv_mo.volume, ROUND(mv_mo.volume_percentual,1), date_format(mv_mo.data_informacao,'%%d/%%m/%%Y')"
+				",GROUP_CONCAT(DISTINCT m.nome SEPARATOR ' / ') municipio"
+				",GROUP_CONCAT(DISTINCT e.nome SEPARATOR ' / ') estado"
+				",GROUP_CONCAT(DISTINCT e.sigla SEPARATOR ' / ') uf"
+				" FROM tb_reservatorio r JOIN tb_reservatorio_municipio rm ON r.id=rm.id_reservatorio"
+				" JOIN tb_municipio m ON rm.id_municipio=m.id"
+				" JOIN tb_estado e ON m.id_estado=e.id"
+				" LEFT OUTER JOIN mv_monitoramento mv_mo"
+				" ON mv_mo.id_reservatorio=r.id"
+				" GROUP BY r.id,mv_mo.volume, mv_mo.volume_percentual,mv_mo.data_informacao")
+		params = None
 	else:
 		query = ("SELECT r.id,r.nome,r.perimetro,r.bacia,r.reservat,r.hectares"
 				",r.tipo,r.area,r.capacidade,mv_mo.fonte"
@@ -75,30 +94,29 @@ def reservoirs_information(res_id=None):
 				",GROUP_CONCAT(DISTINCT m.nome SEPARATOR ' / ') municipio"
 				",GROUP_CONCAT(DISTINCT e.nome SEPARATOR ' / ') estado"
 				",GROUP_CONCAT(DISTINCT e.sigla SEPARATOR ' / ') uf"
-				", curso_barrado, cota_soleira, evaporacao_representativa, localizacao, posto_pluviometrico, area_bacia_nao_controlada, unidade_planejamento"
-				" FROM tb_reservatorio r JOIN tb_reservatorio_municipio rm ON r.id=rm.id_reservatorio AND r.id="+str(res_id)+
+				" FROM tb_reservatorio r JOIN tb_reservatorio_municipio rm ON r.id=rm.id_reservatorio AND r.id=%s"
 				" JOIN tb_municipio m ON rm.id_municipio=m.id"
 				" JOIN tb_estado e ON m.id_estado=e.id"
 				" LEFT OUTER JOIN mv_monitoramento mv_mo"
 				" ON mv_mo.id_reservatorio=r.id"
-				" LEFT JOIN tb_reservatorio_info info"
-				" ON info.id_reservatorio =r.id"
 				" GROUP BY r.id,mv_mo.volume, mv_mo.volume_percentual,mv_mo.data_informacao")
+		params = (int(res_id),)
 
-	select_answer = IO.select_DB(query)
-	keys = ["id","nome","perimetro","bacia","reservat","hectares","tipo","area","capacidade","fonte","volume","volume_percentual","data_informacao","municipio","estado", "uf", "curso_barrado", "cota_soleira", "evaporacao_representativa", "localizacao", "posto_pluviometrico", "area_bacia_nao_controlada", "unidade_planejamento"]
+	select_answer = IO.select_DB(query, params)
+	
+	keys = ["id","nome","perimetro","bacia","reservat","hectares","tipo","area","capacidade","fonte","volume","volume_percentual","data_informacao","municipio","estado", "uf"]
 
 	return funcoes_aux.list_of_dictionarys(select_answer, keys, "info")
 
 def reservoirs_monitoring(res_id,all_monitoring=False):
 	if(all_monitoring):
-		query = ("SELECT ROUND(mo.volume_percentual,1), date_format(mo.data_informacao,'%d/%m/%Y'), mo.volume, mo.fonte FROM tb_monitoramento mo WHERE mo.id_reservatorio="+str(res_id)+
+		query = ("SELECT ROUND(mo.volume_percentual,1), date_format(mo.data_informacao,'%%d/%%m/%%Y'), mo.volume, mo.fonte FROM tb_monitoramento mo WHERE mo.id_reservatorio=%s"
 			" ORDER BY mo.data_informacao")
 	else:
-		query = ("SELECT ROUND(mo.volume_percentual,1), date_format(mo.data_informacao,'%d/%m/%Y'), mo.volume, mo.fonte FROM tb_monitoramento mo WHERE mo.visualizacao=1 and mo.id_reservatorio="+str(res_id)+
+		query = ("SELECT ROUND(mo.volume_percentual,1), date_format(mo.data_informacao,'%%d/%%m/%%Y'), mo.volume, mo.fonte FROM tb_monitoramento mo WHERE mo.visualizacao=1 and mo.id_reservatorio=%s"
 			" ORDER BY mo.data_informacao")
 
-	select_answer = IO.select_DB(query)
+	select_answer = IO.select_DB(query, (int(res_id),))
 
 	keys = ["VolumePercentual","DataInformacao", "Volume","Fonte"]
 
@@ -113,7 +131,7 @@ def reservoirs_monitoring(res_id,all_monitoring=False):
 		date = datetime.strptime(monitoring["DataInformacao"], '%d/%m/%Y')
 		if (date > date_final):
 			date_final = date
-		dates_list.append(float(date.strftime('%s')))
+		dates_list.append(_date_to_numeric(monitoring["DataInformacao"]))
 
 	inicial_date = date_final - relativedelta.relativedelta(months=6)
 
@@ -134,19 +152,16 @@ def reservoirs_monitoring_csv(res_id):
 	saida = [['Volume','VolumePercentual','Fonte','DataInformacao']]
 	for volume in volumes:
 		if 'Fonte' in volume:
-			saida.append(volume.values())
+			saida.append([volume["Volume"], volume["VolumePercentual"], volume["Fonte"], volume["DataInformacao"]])
 	return saida
 
-def reservoirs_states_monitoring_csv(uf):
-	monitoring = reservoirs_equivalent_states_monitoring(uf)['volumes']
-	keys = ['Volume','VolumePercentual','VolumeSemAgua','CapacidadeTotal','CapacidadeSemInfo','VolumePercentualTotal','VolumePercentualSemAgua',"total_reservatorios",'DataInformacao']
-	return [keys] + [[row['Volume']] + [row['VolumePercentual']] + [row['VolumeSemAgua']] + [row['CapacidadeTotal']] + [row['CapacidadeSemInfo']] + [row['VolumePercentualTotal']] + [row['VolumePercentualSemAgua']] + [row['total_reservatorios']] + [row['DataInformacao']] for row in monitoring]
 
 def monitoring_months(res_id,months):
-	query_min_graph = ("select ROUND(volume_percentual,1), date_format(data_informacao,'%d/%m/%Y'), volume from tb_monitoramento where id_reservatorio ="+str(res_id)+
+	months = int(months)
+	query_min_graph = ("select ROUND(volume_percentual,1), date_format(data_informacao,'%%d/%%m/%%Y'), volume from tb_monitoramento where id_reservatorio = %s"
 			" and visualizacao = 1 and data_informacao >= (CURDATE() - INTERVAL " + str(months) + " MONTH) order by data_informacao;")
 
-	select_answer = IO.select_DB(query_min_graph)
+	select_answer = IO.select_DB(query_min_graph, (int(res_id),))
 
 	keys = ["VolumePercentual","DataInformacao", "Volume"]
 
@@ -167,6 +182,141 @@ def reservoirs_similar(name, threshold):
 	similar = funcoes_aux.reservoirs_similar(name,reservoirs,threshold)
 
 	return similar
+
+def reservoirs_states_monitoring_csv(uf):
+	monitoring = reservoirs_equivalent_states_monitoring(uf)['volumes']
+	keys = ['Volume','VolumePercentual','VolumeSemAgua','CapacidadeTotal','CapacidadeSemInfo','VolumePercentualTotal','VolumePercentualSemAgua',"total_reservatorios",'DataInformacao']
+	return [keys] + [[row['Volume']] + [row['VolumePercentual']] + [row['VolumeSemAgua']] + [row['CapacidadeTotal']] + [row['CapacidadeSemInfo']] + [row['VolumePercentualTotal']] + [row['VolumePercentualSemAgua']] + [row['total_reservatorios']] + [row['DataInformacao']] for row in monitoring]
+
+def reservoirs_equivalent_states_history(id_estado):
+	estado_reservatorio = (
+		"SELECT DISTINCT res.id AS id_reservatorio, es.id AS id_estado, es.nome AS estado, es.sigla AS sigla, "
+		"CAST(res.capacidade AS DECIMAL(20,4)) AS capacidade_total_reservatorio "
+		"FROM tb_reservatorio res "
+		"JOIN tb_reservatorio_municipio rm ON res.id = rm.id_reservatorio "
+		"JOIN tb_municipio mu ON rm.id_municipio = mu.id "
+		"JOIN tb_estado es ON mu.id_estado = es.id"
+	)
+	if id_estado == 0 :
+		query = (
+			"SELECT DATE_FORMAT(mo.data_informacao,'%d/%m/%Y') AS data, "
+			"ROUND(SUM(CAST(mo.volume AS DECIMAL(20,4))),2) AS volume_equivalente, "
+			"ROUND(SUM(er.capacidade_total_reservatorio) - SUM(CAST(mo.volume AS DECIMAL(20,4))),2) AS volume_sem_agua, "
+			"ROUND(SUM(er.capacidade_total_reservatorio),2) AS capacidade_equivalente, "
+			"ROUND(total.capacidade_total - SUM(er.capacidade_total_reservatorio),2) AS capacidade_sem_info, "
+			"ROUND(total.capacidade_total,2) AS capacidade_total, "
+			"ROUND((SUM(CAST(mo.volume AS DECIMAL(20,4))) / NULLIF(SUM(er.capacidade_total_reservatorio),0)) * 100,2) AS porcentagem_equivalente, "
+			"ROUND((SUM(CAST(mo.volume AS DECIMAL(20,4))) / NULLIF(total.capacidade_total,0)) * 100,2) AS porcentagem_total, "
+			"ROUND(((SUM(er.capacidade_total_reservatorio) - SUM(CAST(mo.volume AS DECIMAL(20,4)))) / NULLIF(total.capacidade_total,0)) * 100,2) AS porcentagem_sem_agua, "
+			"COUNT(DISTINCT mo.id_reservatorio) AS quant_reservatorio_com_info, "
+			"(total.total_reservatorios - COUNT(DISTINCT mo.id_reservatorio)) AS quant_reservatorio_sem_info, "
+			"total.total_reservatorios, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 10 THEN 1 END) AS intervalo_1, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 10 AND CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 25 THEN 1 END) AS intervalo_2, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 25 AND CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 50 THEN 1 END) AS intervalo_3, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 50 AND CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 75 THEN 1 END) AS intervalo_4, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 75 THEN 1 END) AS intervalo_5 "
+			"FROM tb_monitoramento mo "
+			"JOIN (" + estado_reservatorio + ") er ON er.id_reservatorio = mo.id_reservatorio "
+			"CROSS JOIN (SELECT ROUND(SUM(capacidade_total_reservatorio),4) AS capacidade_total, COUNT(*) AS total_reservatorios "
+			"FROM (" + estado_reservatorio + ") estado_total) total "
+			"GROUP BY mo.data_informacao, total.capacidade_total, total.total_reservatorios "
+			"ORDER BY mo.data_informacao DESC;"
+		)
+
+		keys = ["data", "volume_equivalente","volume_sem_agua","capacidade_equivalente", "capacidade_sem_info","capacidade_total","porcentagem_equivalente", "porcentagem_total", "porcentagem_sem_agua", "quant_reservatorio_com_info","quant_reservatorio_sem_info",
+	 	"total_reservatorios", "quant_reserv_intervalo_1", "quant_reserv_intervalo_2", "quant_reserv_intervalo_3", "quant_reserv_intervalo_4",
+	  	"quant_reserv_intervalo_5"]
+	else:
+		query = (
+			"SELECT DATE_FORMAT(mo.data_informacao,'%%d/%%m/%%Y') AS data, er.estado, er.sigla, "
+			"ROUND(SUM(CAST(mo.volume AS DECIMAL(20,4))),2) AS volume_equivalente, "
+			"ROUND(SUM(er.capacidade_total_reservatorio) - SUM(CAST(mo.volume AS DECIMAL(20,4))),2) AS volume_sem_agua, "
+			"ROUND(SUM(er.capacidade_total_reservatorio),2) AS capacidade_equivalente, "
+			"ROUND(total.capacidade_total - SUM(er.capacidade_total_reservatorio),2) AS capacidade_sem_info, "
+			"ROUND(total.capacidade_total,2) AS capacidade_total, "
+			"ROUND((SUM(CAST(mo.volume AS DECIMAL(20,4))) / NULLIF(SUM(er.capacidade_total_reservatorio),0)) * 100,2) AS porcentagem_equivalente, "
+			"ROUND((SUM(CAST(mo.volume AS DECIMAL(20,4))) / NULLIF(total.capacidade_total,0)) * 100,2) AS porcentagem_total, "
+			"ROUND(((SUM(er.capacidade_total_reservatorio) - SUM(CAST(mo.volume AS DECIMAL(20,4)))) / NULLIF(total.capacidade_total,0)) * 100,2) AS porcentagem_sem_agua, "
+			"COUNT(DISTINCT mo.id_reservatorio) AS quant_reservatorio_com_info, "
+			"(total.total_reservatorios - COUNT(DISTINCT mo.id_reservatorio)) AS quant_reservatorio_sem_info, "
+			"total.total_reservatorios, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 10 THEN 1 END) AS intervalo_1, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 10 AND CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 25 THEN 1 END) AS intervalo_2, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 25 AND CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 50 THEN 1 END) AS intervalo_3, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 50 AND CAST(mo.volume_percentual AS DECIMAL(10,2)) <= 75 THEN 1 END) AS intervalo_4, "
+			"COUNT(CASE WHEN CAST(mo.volume_percentual AS DECIMAL(10,2)) > 75 THEN 1 END) AS intervalo_5 "
+			"FROM tb_monitoramento mo "
+			"JOIN (" + estado_reservatorio + ") er ON er.id_reservatorio = mo.id_reservatorio "
+			"JOIN (SELECT id_estado, ROUND(SUM(capacidade_total_reservatorio),4) AS capacidade_total, COUNT(*) AS total_reservatorios "
+			"FROM (" + estado_reservatorio + ") estado_total GROUP BY id_estado) total ON total.id_estado = er.id_estado "
+			"WHERE er.id_estado = %s "
+			"GROUP BY mo.data_informacao, er.estado, er.sigla, total.capacidade_total, total.total_reservatorios "
+			"HAVING SUM(CAST(mo.volume AS DECIMAL(20,4))) > 0 "
+			"ORDER BY mo.data_informacao DESC;"
+		)
+
+		keys = ["data","estado", "uf", "volume_equivalente","volume_sem_agua","capacidade_equivalente", "capacidade_sem_info","capacidade_total" ,"porcentagem_equivalente","porcentagem_total", "porcentagem_sem_agua", "quant_reservatorio_com_info","quant_reservatorio_sem_info",
+	 	"total_reservatorios", "quant_reserv_intervalo_1", "quant_reserv_intervalo_2", "quant_reserv_intervalo_3", "quant_reserv_intervalo_4",
+	  	"quant_reserv_intervalo_5"]
+	params = None if id_estado == 0 else (int(id_estado),)
+	select_answer = IO.select_DB(query, params)
+
+
+	list_dictionarys = funcoes_aux.list_of_dictionarys(select_answer, keys)
+
+
+	return list_dictionarys
+
+
+def reservoirs_equivalent_states_monitoring(uf="Semiarido"):
+
+	list_dic = []
+	list_dic_2 = []
+	dates_list = []
+	date_final = None
+	inicial_date = None
+	volumes_list = []
+	id_estado = STATE_IDS.get(uf, 0)
+
+	keys_recentes = ["VolumePercentual","DataInformacao", "Volume"]
+	keys = ['Volume','VolumePercentual','VolumeSemAgua','CapacidadeTotal','CapacidadeSemInfo','VolumePercentualTotal','VolumePercentualSemAgua',"total_reservatorios","quant_reservatorio_com_info","quant_reservatorio_sem_info","quant_reserv_intervalo_1","quant_reserv_intervalo_2","quant_reserv_intervalo_3","quant_reserv_intervalo_4","quant_reserv_intervalo_5",'DataInformacao']
+
+	dic = reservoirs_equivalent_states_history(id_estado)
+
+	# dic vem ordenado DESC (mais recente primeiro) do banco.
+	# Invertemos para ordem cronológica crescente (mais antigo primeiro).
+	for elem in reversed(dic):
+		date = datetime.strptime(elem["data"], '%d/%m/%Y')
+		if date_final is None or date > date_final:
+			date_final = date
+		if inicial_date is None or date < inicial_date:
+			inicial_date = date
+		if elem["porcentagem_equivalente"] is not None:
+			dates_list.append(float(date.toordinal()))
+			volumes_list.append(elem["porcentagem_equivalente"])
+		value = [elem["porcentagem_equivalente"], elem["data"], elem["volume_equivalente"]]
+		value_2 = [elem["volume_equivalente"],elem["porcentagem_equivalente"],elem["volume_sem_agua"],elem["capacidade_total"],elem["capacidade_sem_info"],elem["porcentagem_total"],elem["porcentagem_sem_agua"],elem["total_reservatorios"],elem["quant_reservatorio_com_info"],elem["quant_reservatorio_sem_info"],elem["quant_reserv_intervalo_1"],elem["quant_reserv_intervalo_2"],elem["quant_reserv_intervalo_3"],elem["quant_reserv_intervalo_4"],elem["quant_reserv_intervalo_5"],elem["data"]]
+		list_dic.append(value)
+		list_dic_2.append(value_2)
+
+	regression_coefficient=0
+	if volumes_list and len(volumes_list) == len(dates_list):
+		regression_gradient = funcoes_aux.regression_gradient(volumes_list,dates_list)
+		if(not math.isnan(regression_gradient)):
+			regression_coefficient=regression_gradient
+
+	if date_final is None:
+		date_final = datetime.today()
+	if inicial_date is None:
+		inicial_date = date_final
+
+	# volumes_recentes: últimos 6 registros (mais antigos) + o mais recente.
+	# Isso faz o gráfico terminar exatamente no mesmo ponto do volume atual exibido no painel.
+	recent_slice = list_dic[-7:] if len(list_dic) >= 7 else list_dic
+
+	return {'volumes': funcoes_aux.list_of_dictionarys(list_dic_2, keys),'volumes_recentes':{'volumes':funcoes_aux.list_of_dictionarys(recent_slice, keys_recentes),
+		'coeficiente_regressao': regression_coefficient, 'data_final':date_final.strftime('%d/%m/%Y'), 'data_inicial':inicial_date.strftime('%d/%m/%Y')}}
 
 def reservoirs_equivalent_hydrographic_basin():
 	query = ("SELECT res.bacia AS bacia, ROUND(SUM(mv_mo.volume),2) AS volume_equivalente, ROUND(SUM(mv_mo.capacidade),2) AS capacidade_equivalente,"
@@ -190,7 +340,7 @@ def reservoirs_equivalent_hydrographic_basin():
 	return funcoes_aux.list_of_dictionarys(select_answer, keys)
 
 
-def reservoirs_equivalent_states(upper=0, lower=90):
+def reservoirs_equivalent_states():
 	query = ("SELECT estado_reservatorio.estado_nome AS estado, estado_reservatorio.estado_sigla AS sigla, ROUND(SUM(mv_mo.volume),2) AS volume_equivalente,"
 		" ROUND(SUM(mv_mo.capacidade),2) AS capacidade_equivalente, ROUND((SUM(mv_mo.volume)/SUM(mv_mo.capacidade)*100),1) AS porcentagem_equivalente,"
 		" COUNT(DISTINCT mv_mo.id_reservatorio) AS quant_reservatorio_com_info,"
@@ -203,8 +353,8 @@ def reservoirs_equivalent_states(upper=0, lower=90):
 		" COUNT(CASE WHEN mv_mo.volume_percentual > 75 THEN 1 END) AS intervalo_5"
 		" FROM mv_monitoramento mv_mo RIGHT JOIN (select distinct res.id as id_reservatorio, es.nome as estado_nome, es.sigla as estado_sigla"
 		" FROM tb_reservatorio res, tb_reservatorio_municipio rm, tb_municipio mu, tb_estado es"
-		" WHERE res.id=rm.id_reservatorio and res.uhe != 1 and mu.id=rm.id_municipio and mu.id_estado=es.id) estado_reservatorio"
-		" ON estado_reservatorio.id_reservatorio=mv_mo.id_reservatorio AND (CURDATE() - INTERVAL "+str(upper)+ " DAY) >= mv_mo.data_informacao AND mv_mo.data_informacao >= (CURDATE() - INTERVAL "+str(lower)+ " DAY)"
+		" WHERE res.id=rm.id_reservatorio and mu.id=rm.id_municipio and mu.id_estado=es.id) estado_reservatorio"
+		" ON estado_reservatorio.id_reservatorio=mv_mo.id_reservatorio AND mv_mo.data_informacao >= (CURDATE() - INTERVAL 90 DAY)"
 		" GROUP BY estado_reservatorio.estado_nome, estado_reservatorio.estado_sigla;")
 
 	select_answer = IO.select_DB(query)
@@ -218,7 +368,6 @@ def reservoirs_equivalent_states(upper=0, lower=90):
 	# Semiarido Brasileiro
 	volume_equivalente = 0
 	capacidade_equivalente = 0
-	porcentagem_equivalente = 0.0
 	quant_reservatorio_com_info = 0
 	quant_reservatorio_sem_info = 0
 	total_reservatorios = 0
@@ -258,93 +407,18 @@ def reservoirs_equivalent_states(upper=0, lower=90):
 		quant_reserv_intervalo_4 = quant_reserv_intervalo_4 + list_dictionarys[i]["quant_reserv_intervalo_4"]
 		quant_reserv_intervalo_5 = quant_reserv_intervalo_5 + list_dictionarys[i]["quant_reserv_intervalo_5"]
 
-	if capacidade_equivalente > 0:
-		porcentagem_equivalente = volume_equivalente/capacidade_equivalente*100
+	porcentagem_equivalente = 0
+	if capacidade_equivalente:
+		porcentagem_equivalente = round(volume_equivalente/capacidade_equivalente*100,1)
 
 	list_dictionarys.append({"estado":"Semiarido", "uf":"Semiarido","semiarido":"Semiárido Brasileiro", "volume_equivalente":round(volume_equivalente,2),
-		"capacidade_equivalente":round(capacidade_equivalente,2), "porcentagem_equivalente":round(porcentagem_equivalente,1),
+		"capacidade_equivalente":round(capacidade_equivalente,2), "porcentagem_equivalente":porcentagem_equivalente,
 		"quant_reservatorio_com_info":quant_reservatorio_com_info,"quant_reservatorio_sem_info":quant_reservatorio_sem_info,
 		"total_reservatorios":total_reservatorios, "quant_reserv_intervalo_1":quant_reserv_intervalo_1, "quant_reserv_intervalo_2":quant_reserv_intervalo_2,
 		 "quant_reserv_intervalo_3":quant_reserv_intervalo_3, "quant_reserv_intervalo_4":quant_reserv_intervalo_4,
 		 "quant_reserv_intervalo_5":quant_reserv_intervalo_5})
 
 	return list_dictionarys
-
-
-def reservoirs_equivalent_states_history(id_estado):
-	if id_estado == 0 :
-		query = ("SELECT date_format(data_informacao,'%d/%m/%Y') as data, round(sum(volume_equivalente),2),round(sum(capacidade_equivalente)-sum(volume_equivalente),2), round(sum(capacidade_equivalente),2) as capacidade_equivalente, round(sum(capacidade_total)-sum(capacidade_equivalente),2),round(sum(capacidade_total),2) as capacidade_total, round((sum(volume_equivalente)/sum(capacidade_equivalente)*100),2),"
-				"round((sum(volume_equivalente)/sum(capacidade_total)*100),2) as porcentagem_total, round(((sum(capacidade_equivalente)-sum(volume_equivalente))/sum(capacidade_total)*100),2) as porcentagem_sem_agua, sum(quantidade_reservatorio_com_info), sum(quantidade_reservatorio_sem_info),"
-	 			"sum(total_reservatorios), sum(intervalo_1), sum(intervalo_2), sum(intervalo_3), sum(intervalo_4),"
-	  			"sum(intervalo_5) FROM mv_monitoramento_estado mv GROUP BY data_informacao DESC;")
-
-		keys = ["data", "volume_equivalente","volume_sem_agua","capacidade_equivalente", "capacidade_sem_info","capacidade_total","porcentagem_equivalente", "porcentagem_total", "porcentagem_sem_agua", "quant_reservatorio_com_info","quant_reservatorio_sem_info",
-	 	"total_reservatorios", "quant_reserv_intervalo_1", "quant_reserv_intervalo_2", "quant_reserv_intervalo_3", "quant_reserv_intervalo_4",
-	  	"quant_reserv_intervalo_5"]
-	else:
-		query = ("SELECT date_format(data_informacao,'%d/%m/%Y'),estado, sigla, round(volume_equivalente,2), round(capacidade_equivalente-volume_equivalente,2),round(capacidade_equivalente,2),round(capacidade_total-capacidade_equivalente,2), round(capacidade_total,2), round(porcentagem_equivalente,2), round(porcentagem_total,2), round(porcentagem_sem_agua,2), CONVERT(quantidade_reservatorio_com_info, SIGNED), CONVERT(quantidade_reservatorio_sem_info, SIGNED),"
-	 			"CONVERT(total_reservatorios, SIGNED), CONVERT(intervalo_1, SIGNED), CONVERT(intervalo_2, SIGNED), CONVERT(intervalo_3, SIGNED), CONVERT(intervalo_4, SIGNED),"
-	  			"CONVERT(intervalo_5, SIGNED) FROM mv_monitoramento_estado mv WHERE mv.id_estado ="+str(id_estado)+" and volume_equivalente>0;")
-
-		keys = ["data","estado", "uf", "volume_equivalente","volume_sem_agua","capacidade_equivalente", "capacidade_sem_info","capacidade_total" ,"porcentagem_equivalente","porcentagem_total", "porcentagem_sem_agua", "quant_reservatorio_com_info","quant_reservatorio_sem_info",
-	 	"total_reservatorios", "quant_reserv_intervalo_1", "quant_reserv_intervalo_2", "quant_reserv_intervalo_3", "quant_reserv_intervalo_4",
-	  	"quant_reserv_intervalo_5"]
-	select_answer = IO.select_DB(query)
-
-
-	list_dictionarys = funcoes_aux.list_of_dictionarys(select_answer, keys)
-
-
-	return list_dictionarys
-
-
-def reservoirs_equivalent_states_monitoring(uf="Semiarido"):
-
-	list_dic = []
-	list_dic_2 = []
-	dates_list = [];
-	date_final = datetime.strptime('31/12/1969', '%d/%m/%Y')
-	inicial_date = datetime.today()
-	volumes_list = []
-	id_estado = 0
-
-	keys_recentes = ["VolumePercentual","DataInformacao", "Volume"]
-	keys = ['Volume','VolumePercentual','VolumeSemAgua','CapacidadeTotal','CapacidadeSemInfo','VolumePercentualTotal','VolumePercentualSemAgua',"total_reservatorios","quant_reservatorio_com_info","quant_reservatorio_sem_info","quant_reserv_intervalo_1","quant_reserv_intervalo_2","quant_reserv_intervalo_3","quant_reserv_intervalo_4","quant_reserv_intervalo_5",'DataInformacao']
-
-	if uf == "AL": id_estado = 27
-	elif uf == "BA": id_estado = 29
-	elif uf == "CE": id_estado = 23
-	elif uf == "MG": id_estado = 31
-	elif uf == "PB": id_estado = 25
-	elif uf == "PE": id_estado = 26
-	elif uf == "PI": id_estado = 22
-	elif uf == "RN": id_estado = 24
-	elif uf == "SE": id_estado = 28
-	elif uf == "BA": id_estado = 29
-
-
-	dic = reservoirs_equivalent_states_history(id_estado)
-
-	for elem in dic:
-		date = datetime.strptime(elem["data"], '%d/%m/%Y')
-		dates_list.insert(0,float(date.strftime('%s')))
-		if elem["porcentagem_equivalente"] is not None:
-			volumes_list.insert(0,elem["porcentagem_equivalente"])
-		value = [elem["porcentagem_equivalente"], elem["data"], elem["volume_equivalente"]]
-		value_2 = [elem["volume_equivalente"],elem["porcentagem_equivalente"],elem["volume_sem_agua"],elem["capacidade_total"],elem["capacidade_sem_info"],elem["porcentagem_total"],elem["porcentagem_sem_agua"],elem["total_reservatorios"],elem["quant_reservatorio_com_info"],elem["quant_reservatorio_sem_info"],elem["quant_reserv_intervalo_1"],elem["quant_reserv_intervalo_2"],elem["quant_reserv_intervalo_3"],elem["quant_reserv_intervalo_4"],elem["quant_reserv_intervalo_5"],elem["data"]]
-		list_dic.insert(0,value)
-		list_dic_2.insert(0,value_2)
-
-	regression_coefficient=0 #using gradient 0 for now
-	if(len(volumes_list) == len(dates_list)):
-		regression_gradient = funcoes_aux.regression_gradient(volumes_list,dates_list)
-		if(not math.isnan(regression_gradient)):
-			regression_coefficient=regression_gradient
-
-	return {'volumes': funcoes_aux.list_of_dictionarys(list_dic_2, keys),'volumes_recentes':{'volumes':funcoes_aux.list_of_dictionarys(list_dic[len(list_dic)-7:-1], keys_recentes),
-		'coeficiente_regressao': 0, 'data_final':date_final.strftime('%d/%m/%Y'), 'data_inicial':inicial_date.strftime('%d/%m/%Y')}}
-
-
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -356,16 +430,20 @@ def verify_csv(req):
 	file = req.files['file']
 	if file.filename == '':
 	    abort (404)
+	isValido = False
+	monitoramentoList = []
+	saida = {"valido": False, "arquivo": "", "linhas": 0}
 	if file and allowed_file(file.filename):
 	    filename = secure_filename(file.filename)
 	    monitoramento = file.read()
+	    if isinstance(monitoramento, bytes):
+	        monitoramento = monitoramento.decode("utf-8")
 	    isValido = True
-	    regex = re.compile(r"^\d+(.\d+)?,\d+(.\d+)?,[A-Z ]*,\d\d\/\d\d\/\d\d\d\d")
-	    monitoramentoList = monitoramento.split('\r\n')
-	    for i in range(1,len(monitoramentoList) -1):
-	        if regex.search(monitoramentoList[i]) == None:
+	    regex = re.compile(r"^\d+(\.\d+)?,\d+(\.\d+)?,[A-Z ]*,\d{2}/\d{2}/\d{4}$")
+	    monitoramentoList = [line.strip() for line in monitoramento.splitlines() if line.strip()]
+	    for i in range(1, len(monitoramentoList)):
+	        if regex.search(monitoramentoList[i]) is None:
 	            isValido = False
-	    monitoramentoList = filter(lambda a: a != '', monitoramentoList)
 	    saida = {"valido": isValido, "arquivo": file.filename, "linhas":len(monitoramentoList)}
 	if isValido:
 		temporary_upload(reservatId, monitoramentoList)
@@ -385,8 +463,9 @@ def confirm_upload(req,reservatId):
 	return {'replaced' : IO.replace_reservat_history(reservatId)}
 
 def city_info(sab=0):
-	query = ("SELECT mu.id, mu.nome, mu.latitude,mu.longitude, es.sigla, es.nome from tb_municipio mu, tb_estado es where es.id=mu.id_estado and semiarido="+str(sab)+";")
-	select_answer = IO.select_DB(query)
+	query = ("SELECT mu.id, mu.nome, mu.latitude,mu.longitude, es.sigla, es.nome"
+		" FROM tb_municipio mu JOIN tb_estado es ON es.id=mu.id_estado WHERE semiarido=%s;")
+	select_answer = IO.select_DB(query, (int(sab),))
 
 	keys = ["id_municipio","nome_municipio","latitude","longitude","UF","estado"]
 

@@ -12,14 +12,21 @@ import PythonGists
 
 import simplekv.memory
 import datetime
-import api_mandacaru
-import funcoes_aux
-import StringIO
+from io import StringIO
 import csv
 import sys, os
-sys.path.append('../sab-api/script')
-sys.path.append('../sab-api/authentication')
-sys.path.append('../sab-api/predict')
+
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+for extra_path in (
+    os.path.join(BASE_DIR, 'script'),
+    os.path.join(BASE_DIR, 'authentication'),
+    os.path.join(BASE_DIR, 'predict'),
+):
+    if extra_path not in sys.path:
+        sys.path.insert(0, extra_path)
+
+import api_mandacaru
+import funcoes_aux
 
 import aux_collection_insert
 import predict
@@ -55,6 +62,7 @@ def get_response(data):
 
 @app.route('/login', methods=['POST'])
 def login():
+    global completion
     data = jsonify({'Authorized' : completion})
     resp = get_response(data)
 
@@ -63,7 +71,6 @@ def login():
         username = json.get("email")
         password = json.get("password")
 
-        global completion
         completion = auth.authenticate(username, password)
 
         if completion == False:
@@ -96,13 +103,13 @@ def _revoke_current_token():
 @app.route('/logout', methods=['POST'])
 @jwt_required
 def logout():
+    global completion
     data = jsonify({'Authorized' : completion})
     resp = get_response(data)
 
     if request.method == 'POST':
         try:
             _revoke_current_token()
-            global completion
             completion = False
         except KeyError:
             return jsonify({
@@ -144,7 +151,7 @@ def reservoirs_information(id=None):
         response = json.dumps(api_mandacaru.reservoirs_information())
     else:
         response = json.dumps(api_mandacaru.reservoirs_information(int(id)))
-	response = make_response(response)
+    response = make_response(response)
     return response
 
 @app.route('/api/reservatorios/<id>/monitoramento')
@@ -156,7 +163,7 @@ def reservoirs_monitoring(id):
 @app.route('/api/reservatorios/<id>/monitoramento/csv')
 def reservoirs_monitoring_csv(id):
 	csvList = api_mandacaru.reservoirs_monitoring_csv(int(id))
-	si = StringIO.StringIO()
+	si = StringIO()
 	cw = csv.writer(si)
 	cw.writerows(csvList)
 	response = make_response(si.getvalue())
@@ -167,7 +174,7 @@ def reservoirs_monitoring_csv(id):
 @app.route('/api/reservatorios/estado/<uf>/csv')
 def reservoirs_states_monitoring_csv(uf):
     csvList = api_mandacaru.reservoirs_states_monitoring_csv(uf)
-    si = StringIO.StringIO()
+    si = StringIO()
     cw = csv.writer(si)
     cw.writerows(csvList)
     response = make_response(si.getvalue())
@@ -226,15 +233,15 @@ def search_information():
 	response = make_response(response)
 	return response
 
-@jwt_required
 @app.route('/api/upload/verificacao',methods=['POST'])
+@jwt_required
 def upload_file():
     response = json.dumps(api_mandacaru.verify_csv(request))
     response = make_response(response)
     return response
 
-@jwt_required
 @app.route('/api/upload/confirmacao/<id>',methods=['GET','POST'])
+@jwt_required
 def confirm_upload(id=None):
 	response = json.dumps(api_mandacaru.confirm_upload(request,id))
 	response = make_response(response)

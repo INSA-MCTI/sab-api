@@ -3,7 +3,12 @@ from os import urandom
 from flask import request, make_response
 from hasher import digest, hash_all
 import sys
-sys.path.append('../sab-api/script')
+import os
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+SCRIPT_PATH = os.path.join(PROJECT_ROOT, 'script')
+if SCRIPT_PATH not in sys.path:
+    sys.path.insert(0, SCRIPT_PATH)
 import aux_collection_insert
 
 class Token(object):
@@ -64,4 +69,3 @@ class Authorize(object):
 		del self.sessions[hA1]
 		self.user = ''
 		return False
-

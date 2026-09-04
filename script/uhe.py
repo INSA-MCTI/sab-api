@@ -20,12 +20,21 @@ uhes = ['19123','19116','19122','19124','19125','19121','19126']
 cabecalho = ['Codigo','Reservatorio','Cota','Capacidade','Volume','VolumePercentual','DataInformacao']
 to_insert = []
 to_insert_monitoring = []
-reserv_info = aux_collection_insert.consulta_BD("SELECT id, capacidade, volume_minimo, volume_util FROM INSA.tb_reservatorio where id in (19123,19116,19122,19124,19125,19121,19126);")
-# capacidade, volume_minimo, volume_util
+reserv_info = aux_collection_insert.consulta_BD("SELECT id, capacidade FROM INSA.tb_reservatorio where id in (19123,19116,19122,19124,19125,19121,19126);")
+# O schema atual so armazena a capacidade total. Como nao ha colunas de
+# volume minimo/volume util, usamos 0 e a capacidade total como fallback.
 uhe_info = {}
 for row in reserv_info:
-	uhe_info[str(row[0])] = [float(row[1])] + [row[2]] + [row[3]]
+	capacidade = float(row[1])
+	uhe_info[str(row[0])] = {
+		"capacidade": capacidade,
+		"volume_minimo": 0.0,
+		"volume_util": capacidade,
+	}
 for uhe in uhes:
+	uhe_data = uhe_info.get(uhe)
+	if uhe_data is None:
+		continue
 	if uhe not in last_dates:
 		start = datetime.strptime('01/01/1970',formato_data_1)
 	else:
@@ -52,10 +61,10 @@ for uhe in uhes:
 						line_monitoring[1] = element.text
 					elif element.tag.replace('{http://sarws.ana.gov.br}','') == 'volumeUtil':
 						if element.text is not None:
-							vol_ac = float(str(element.text))*uhe_info[uhe][2]/100
+							vol_ac = float(str(element.text))*uhe_data["volume_util"]/100
 							line += [format(vol_ac,'.2f')]
-							line_monitoring[2] = format(vol_ac+uhe_info[uhe][1],'.2f')
-							line_monitoring[3] = format((vol_ac+uhe_info[uhe][1])*100/uhe_info[uhe][0],'.2f')
+							line_monitoring[2] = format(vol_ac+uhe_data["volume_minimo"],'.2f')
+							line_monitoring[3] = format((vol_ac+uhe_data["volume_minimo"])*100/uhe_data["capacidade"],'.2f')
 						else:
 							line += [element.text]
 							continue;

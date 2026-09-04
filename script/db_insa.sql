@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS `INSA`.`mv_monitoramento` (
 
 DROP PROCEDURE IF EXISTS `INSA`.`refresh_mv_monitoramento`;
 
+DELIMITER $$
 CREATE PROCEDURE `INSA`.`refresh_mv_monitoramento`()
 BEGIN
 TRUNCATE TABLE `INSA`.`mv_monitoramento`;
@@ -181,7 +182,8 @@ RIGHT JOIN (SELECT r.id,r.latitude,r.longitude, r.capacidade, max(m.data_informa
 LEFT OUTER JOIN tb_monitoramento m ON r.id=m.id_reservatorio GROUP BY r.id) mon ON mo.id_reservatorio=mon.id
 AND mon.maior_data=mo.data_informacao;
 
-END;
+END$$
+DELIMITER ;
 
 DROP procedure IF EXISTS `INSA`.`replace_reservat_history`;
 
